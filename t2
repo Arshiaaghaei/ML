@@ -1,0 +1,135 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# -----------------------------
+# Data
+# -----------------------------
+X1 = np.array([1, 2, 3, 3, 2], dtype=float)
+X2 = np.array([1, 1, 2, 5, 4], dtype=float)
+y  = np.array([0, 0, 0, 1, 1], dtype=int)
+
+m = len(y)
+alpha = 0.01
+
+# initial weights
+w0 = 0.5
+w1 = 0.5
+w2 = 0.5
+
+# -----------------------------
+# Model helpers
+# -----------------------------
+def sigmoid(z):
+    return 1.0 / (1.0 + np.exp(-z))
+
+def predict_proba(w0, w1, w2):
+    z = w0 + w1 * X1 + w2 * X2
+    return sigmoid(z)
+
+def cost(w0, w1, w2):
+    h = predict_proba(w0, w1, w2)
+    eps = 1e-15
+    return -np.mean(y * np.log(h + eps) + (1 - y) * np.log(1 - h + eps))
+
+def gradients(w0, w1, w2):
+    h = predict_proba(w0, w1, w2)
+    err = h - y
+    dw0 = np.mean(err)
+    dw1 = np.mean(err * X1)
+    dw2 = np.mean(err * X2)
+    return dw0, dw1, dw2
+
+# -----------------------------
+# Metrics (Precision, Recall, Accuracy)
+# -----------------------------
+def confusion_counts(y_true, y_pred):
+    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
+    tn = int(np.sum((y_true == 0) & (y_pred == 0)))
+    fp = int(np.sum((y_true == 0) & (y_pred == 1)))
+    fn = int(np.sum((y_true == 1) & (y_pred == 0)))
+    return tp, tn, fp, fn
+
+def precision_recall_accuracy(y_true, y_pred):
+    tp, tn, fp, fn = confusion_counts(y_true, y_pred)
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall    = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    accuracy  = (tp + tn) / len(y_true) if len(y_true) > 0 else 0.0
+    return precision, recall, accuracy, (tp, tn, fp, fn)
+
+# -----------------------------
+# ROC + AUC (manual, no sklearn)
+# -----------------------------
+def roc_curve_manual(y_true, y_score):
+    # thresholds from +inf to -inf (standard ROC construction)
+    thresholds = np.r_[np.inf, np.sort(np.unique(y_score))[::-1], -np.inf]
+
+    P = np.sum(y_true == 1)
+    N = np.sum(y_true == 0)
+
+    tpr_list = []
+    fpr_list = []
+
+    for thr in thresholds:
+        y_pred = (y_score >= thr).astype(int)
+        tp, tn, fp, fn = confusion_counts(y_true, y_pred)
+        tpr = tp / P if P > 0 else 0.0
+        fpr = fp / N if N > 0 else 0.0
+        tpr_list.append(tpr)
+        fpr_list.append(fpr)
+
+    return np.array(fpr_list), np.array(tpr_list), thresholds
+
+def auc_trapz(fpr, tpr):
+    # sort by fpr to integrate correctly
+    idx = np.argsort(fpr)
+    return np.trapz(tpr[idx], fpr[idx])
+
+# -----------------------------
+# Train: 2 batch gradient descent updates
+# -----------------------------
+print("Initial:")
+print("w0,w1,w2 =", w0, w1, w2)
+print("J0 =", cost(w0, w1, w2))
+
+for step in range(1, 3):  # 2 updates
+    dw0, dw1, dw2 = gradients(w0, w1, w2)
+    w0 -= alpha * dw0
+    w1 -= alpha * dw1
+    w2 -= alpha * dw2
+    print(f"\nAfter update {step}:")
+    print("dw0,dw1,dw2 =", dw0, dw1, dw2)
+    print("w0,w1,w2 =", w0, w1, w2)
+    print(f"J{step} =", cost(w0, w1, w2))
+
+# -----------------------------
+# Predictions + metrics at threshold 0.5
+# -----------------------------
+proba = predict_proba(w0, w1, w2)
+y_pred = (proba >= 0.5).astype(int)
+
+precision, recall, accuracy, (tp, tn, fp, fn) = precision_recall_accuracy(y, y_pred)
+
+print("\n--- Metrics (threshold=0.5) ---")
+print("Probabilities:", proba)
+print("Predictions:", y_pred)
+print(f"TP={tp}, TN={tn}, FP={fp}, FN={fn}")
+print("Precision =", precision)
+print("Recall    =", recall)
+print("Accuracy  =", accuracy)
+
+# -----------------------------
+# ROC + AUC
+# -----------------------------
+fpr, tpr, thresholds = roc_curve_manual(y, proba)
+auc_value = auc_trapz(fpr, tpr)
+
+print("\n--- ROC/AUC ---")
+print("AUC =", auc_value)
+
+plt.figure()
+plt.plot(fpr, tpr, marker='o')
+plt.xlabel("False Positive Rate (FPR)")
+plt.ylabel("True Positive Rate (TPR)")
+plt.title(f"ROC Curve (AUC = {auc_value:.4f})")
+plt.grid(True)
+plt.show()
